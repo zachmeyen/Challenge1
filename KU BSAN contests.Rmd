@@ -1,0 +1,197 @@
+---
+title: "University of Kansas Analytics Competition"
+author: "Zach Meyen"
+date: "5/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+The following is a 2019 competition in which I took first place out of around 15 participants from the University of Kansas School of Business as well as the University of Kansas School of Computer Engineering. It was open to teams and individuals, however I opted to participate solo. The competition was hosted in conjunction with Tradebot, a prominent Kansas City algorithmic trading company.
+
+The competition was held in three parts with a mix of practical application of analytic models and answering of theoretical questions. 
+
+I placed 1st place in parts one and two. In part three, I placed second.
+
+## Challenge 1: Rock Chalk Retailer
+
+**Problem Statement:** Rock Chalk Retailer is a retail grocer in Kansas, over the year 2013 their data scientists collected sales information on 1559 products across their 10 stores as well as certain attributes of each store and the product itself. These characteristics are listed below. Your challenge is to build a predictive model that will help Rock Chalk Retailer estimate the sales of each product at a particular store (Outlet_Sales).  
+
+	
+**Evaluation:** The Business Analytics Club has kept a holdout sample of the data consisting of x rows of data. We will use the model your group submitted to estimate the Outlet_Sales of our holdout sample and compare your predictions to the actual amount. The evaluation metric we will be using is the Mean Squared Error.
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, results = FALSE}
+library(caret)
+library(arm)
+library(zoo)
+library(data.table)
+library(caTools)
+library(Metrics)
+```
+
+I load in both the holdout and the training dataset into Rstudio's memory. Setting the seed is important to get reproducible results.
+
+```{r}
+set.seed(100)
+#load original training data set
+data <- read.csv("RockChalk_Retailer.csv")
+BLIND <- read.csv("Holdout_1.csv")
+head(data)
+```
+
+Now that we have a picture of what the data looks like, it is time to do a bit of EDA and wrangling!
+
+### Exploratory Data Analysis and Data Cleaning
+
+```{r }
+summary(data$Item_ID)
+```
+We have 7999 observations. Now we need to check for missing data.
+```{r}
+colSums(is.na(data))
+```
+The column *weight* has 1375 NAs. Next we will create a new dataframe with just unique IDs and their respective weights.
+
+``` {r}
+idw <- (data[c(1,2)])
+#find unique values
+uidw <- unique(idw)
+colSums(is.na(uidw))
+```
+Time to fix this missing data. 
+```{r}
+data<-setDT(data)[,Weight := na.locf(na.locf(Weight, na.rm=FALSE), fromLast=TRUE) , by = Item_ID]
+#remove remaining few rows with NA
+data <- na.omit(data)
+```
+
+Let's take a look at this sales distribution. 
+```{r, echo = FALSE}
+hist(data$Outlet_Sales)
+```
+
+It is heavily skewed to the left. This implies we will need to perform some sort of transformation. A simple logarithmic transformation works well.
+```{r, echo = FALSE}
+hist(data$Outlet_Sales^(0.18181818))
+```
+
+We are going to give the variables *Fat_content*, *Outlet_Location_Type*, and *Outlet_Type* a needed makeover.Rather than keep them as the categorical variables they are, we are going to change all of them to binary indicator variables. This method is not the prettiest code, but it is effective.
+``` {r}
+#create new columns for fat_content 
+data$low_fat[data$Fat_Content %in% c("LF","low fat", "Low Fat")] <- 1
+data$low_fat[!data$Fat_Content %in% c("LF","low fat", "Low Fat")] <- 0
+#new col for reg fat
+data$reg_fat[data$Fat_Content %in% c("reg","regular")] <- 1
+data$reg_fat[!data$Fat_Content %in% c("reg","regular")] <- 0
+
+#new col for outlet location type
+data$Out_Loc_Tier_1[data$Outlet_Location_Type %in% c("Tier 1")] <- 1
+data$Out_Loc_Tier_1[!data$Outlet_Location_Type %in% c("Tier 1")] <- 0
+data$Out_Loc_Tier_2[data$Outlet_Location_Type %in% c("Tier 2")] <- 1
+data$Out_Loc_Tier_2[!data$Outlet_Location_Type %in% c("Tier 2")] <- 0
+data$Out_Loc_Tier_3[data$Outlet_Location_Type %in% c("Tier 3")] <- 1
+data$Out_Loc_Tier_3[!data$Outlet_Location_Type %in% c("Tier 3")] <- 0
+
+#new col for outlet type
+data$Groc_stor[data$Outlet_Type %in% c("Grocery Store")] <- 1
+data$Groc_stor[!data$Outlet_Type %in% c("Grocery Store")] <- 0
+
+data$Supermarket1[data$Outlet_Type %in% c("Supermarket Type1")] <- 1
+data$Supermarket1[!data$Outlet_Type %in% c("Supermarket Type1")] <- 0
+
+data$Supermarket2[data$Outlet_Type %in% c("Supermarket Type2")] <- 1
+data$Supermarket2[!data$Outlet_Type %in% c("Supermarket Type2")] <- 0
+
+data$Supermarket3[data$Outlet_Type %in% c("Supermarket Type3")] <- 1
+data$Supermarket3[!data$Outlet_Type %in% c("Supermarket Type3")] <- 0
+
+#remove redundent features, apply to new dataframe
+data2 <- subset(data, select = -c(Fat_Content, Type, Outlet_Size,
+                                  Outlet_Location_Type, Outlet_Type, Outlet_ID, Item_ID))
+```
+
+It is very important to remove those redundent features to prevent overfitting.
+
+
+The next step is repeating all of these exact transformations to the BLIND dataset. I will omit that from this report, but it is in the raw code if you desire to view it.
+```{r, echo = FALSE, warning=FALSE, message=FALSE, results = FALSE, }
+
+
+
+#Check for NAs
+#1375 NA in Weight
+
+
+
+#create new df for ID and Weight
+idw <- (BLIND[c(1,2)])
+#find unique values
+uidw <- unique(idw)
+
+
+
+
+#must remove factors, create dummy variables
+#create new coloumns for fat_content 
+BLIND$low_fat[BLIND$Fat_Content %in% c("LF","low fat", "Low Fat")] <- 1
+BLIND$low_fat[!BLIND$Fat_Content %in% c("LF","low fat", "Low Fat")] <- 0
+#new col for reg fat
+BLIND$reg_fat[BLIND$Fat_Content %in% c("reg","regular")] <- 1
+BLIND$reg_fat[!BLIND$Fat_Content %in% c("reg","regular")] <- 0
+
+#new col for outlet location type
+BLIND$Out_Loc_Tier_1[BLIND$Outlet_Location_Type %in% c("Tier 1")] <- 1
+BLIND$Out_Loc_Tier_1[!BLIND$Outlet_Location_Type %in% c("Tier 1")] <- 0
+BLIND$Out_Loc_Tier_2[BLIND$Outlet_Location_Type %in% c("Tier 2")] <- 1
+BLIND$Out_Loc_Tier_2[!BLIND$Outlet_Location_Type %in% c("Tier 2")] <- 0
+BLIND$Out_Loc_Tier_3[BLIND$Outlet_Location_Type %in% c("Tier 3")] <- 1
+BLIND$Out_Loc_Tier_3[!BLIND$Outlet_Location_Type %in% c("Tier 3")] <- 0
+
+#new col for outlet type
+BLIND$Groc_stor[BLIND$Outlet_Type %in% c("Grocery Store")] <- 1
+BLIND$Groc_stor[!BLIND$Outlet_Type %in% c("Grocery Store")] <- 0
+
+BLIND$Supermarket1[BLIND$Outlet_Type %in% c("Supermarket Type1")] <- 1
+BLIND$Supermarket1[!BLIND$Outlet_Type %in% c("Supermarket Type1")] <- 0
+
+BLIND$Supermarket2[BLIND$Outlet_Type %in% c("Supermarket Type2")] <- 1
+BLIND$Supermarket2[!BLIND$Outlet_Type %in% c("Supermarket Type2")] <- 0
+
+BLIND$Supermarket3[BLIND$Outlet_Type %in% c("Supermarket Type3")] <- 1
+BLIND$Supermarket3[!BLIND$Outlet_Type %in% c("Supermarket Type3")] <- 0
+
+#fix NAs in Weight
+BLIND<-setDT(BLIND)[,Weight := na.locf(na.locf(Weight, na.rm=FALSE), fromLast=TRUE) , by = Item_ID]
+#remove remaining 7 rows with NA
+BLIND <- na.omit(BLIND)
+```
+
+### The Model
+
+Now for the fun bit. The linear model. While I do prefer more advanced models, I was confident in the results that this linear model returned. These predictors are the result of extensive variable selection.
+
+``` {r}
+competitonLM <- lm(Outlet_Sales^(0.18181818)~MRP + Groc_stor + Supermarket3 + Visibility + Out_Loc_Tier_1 + 
+              Supermarket1 + Out_Loc_Tier_2, data2)
+summary(competitonLM)
+
+competitionResults <- predict(competitonLM, BLIND)
+
+competitionRMSE <- rmse(BLIND$Outlet_Sales,competitionResults^(1/.18181818))
+print(competitionRMSE)
+
+```
+This value, 1125.428, is the standard deviation for the errors from the prediction. In this case, 1125 is not bad.
+
+
+
+
+
+
+
+
+
